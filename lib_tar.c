@@ -14,8 +14,8 @@ bool is_it_the_end(int tar_fd){
 
     off_t to_go = lseek(tar_fd, 0, SEEK_CUR);
 
-    char first_block[block_size] = {0};
-    char second_block[block_size] = {0};
+    char first_block[block_size];
+    char second_block[block_size];
 
     ssize_t reading = read(tar_fd, first_block, block_size);
     if(reading < 0) return false;
@@ -53,27 +53,19 @@ int check_archive(int tar_fd) {
 
     int nb_of_headers = 0;
 
-    //off_t lseek_size = lseek(tar_fd, 0, SEEK_END); // Size of entire archive
-    //int nb_tot_blocks = lseek_size / 512;
+    long to_go_cumulate = 0;
 
-    long to_go_cumulate = 0; // The position in the file !
+    while(true) {
 
-    tar_header_t * data = malloc(sizeof(tar_header_t));
-    if(data == NULL) return -1;
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
 
-    if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
-        printf("an error occurred while reading");
-        return -1;
-    }
-
-    while(strcmp(data->magic, "ustar") != 0 || data->version[0] != '\0'){
-
-        long to_go = ((TAR_INT(data->size) / 512) * 512);
-        if(to_go % 512 > 0){
-            to_go += 512;
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
         }
 
-        if(strncmp(data->magic, TMAGIC, TMAGLEN-1) != 0) return -1;
+        if(strcmp(data->magic, "ustar") != 0) return -1;
         if(strncmp(data->version, TVERSION, TVERSLEN-1) != 0) return -2;
 
         long int chksum = TAR_INT(data->chksum);
@@ -89,20 +81,18 @@ int check_archive(int tar_fd) {
 
         if(chksum != tot) return -3;
 
-        to_go_cumulate += to_go;
-
-        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-
-        nb_of_headers++;
-
-        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
-            printf("an error occurred while reading");
-            return -1;
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
         }
 
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+        nb_of_headers++;
     }
-
     return nb_of_headers;
+
 }
 
 
@@ -156,9 +146,29 @@ int exists(int tar_fd, char *path) {
  */
 int is_dir(int tar_fd, char *path) {
 
-        //if(strcmp(data->name, path) == 0 && data->typeflag == DIRTYPE) return 1;
+    long to_go_cumulate = 0;
 
+    while(true) {
 
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(strcmp(data->name, path) == 0 && data->typeflag == DIRTYPE) return 1;
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+    }
     return 0;
 }
 
@@ -173,9 +183,29 @@ int is_dir(int tar_fd, char *path) {
  */
 int is_file(int tar_fd, char *path) {
 
+    long to_go_cumulate = 0;
 
-        //if(strcmp(data->name, path) == 0 && data->typeflag == REGTYPE) return 1;
+    while(true) {
 
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(strcmp(data->name, path) == 0 && data->typeflag == REGTYPE) return 1;
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+    }
     return 0;
 }
 
@@ -188,6 +218,30 @@ int is_file(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_symlink(int tar_fd, char *path) {
+
+    long to_go_cumulate = 0;
+
+    while(true) {
+
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(strcmp(data->name, path) == 0 && data->typeflag == SYMTYPE) return 1;
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+    }
     return 0;
 }
 
@@ -215,6 +269,45 @@ int is_symlink(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
+    long to_go_cumulate = 0;
+
+    while(true) {
+
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(data->typeflag == SYMTYPE) {
+            char link[101];
+            memcpy(link, data->linkname, 100);
+            link[100] = '\0';
+
+            lseek(tar_fd, 0, SEEK_SET);
+        }
+
+        char var_name[101];
+        memcpy(var_name, data->name, 100);
+        var_name[100] = '\0';
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        if(strncmp(var_name, path, strlen(path)) == 0){
+            entries[*no_entries] = strdup(var_name);
+            (*no_entries)++;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+    }
+
     return 0;
 }
 

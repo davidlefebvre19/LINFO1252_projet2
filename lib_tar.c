@@ -4,6 +4,35 @@
 #include <unistd.h>
 #include "lib_tar.h"
 
+#define block_size 512
+
+/**
+ * A function which returns true if we are at the end of the tar archive and false otherwise
+ */
+
+bool is_it_the_end(int tar_fd){
+
+    off_t to_go = lseek(tar_fd, 0, SEEK_CUR);
+
+    char first_block[block_size] = {0};
+    char second_block[block_size] = {0};
+
+    ssize_t reading = read(tar_fd, first_block, block_size);
+    if(reading < 0) return false;
+
+    reading = read(tar_fd, second_block, block_size);
+    if(reading < 0) return false;
+
+    for (int i = 0; i < block_size; ++i) {
+        if(first_block[i] != 0 || second_block[i] != 0){
+            lseek(tar_fd, to_go, SEEK_SET);
+            return false;
+        }
+    }
+    lseek(tar_fd, to_go, SEEK_SET);
+    return true;
+}
+
 /**
  * Checks whether the archive is valid.
  *
@@ -19,6 +48,7 @@
  *         -2 if the archive contains a header with an invalid version value,
  *         -3 if the archive contains a header with an invalid checksum value
  */
+
 int check_archive(int tar_fd) {
 
     int nb_of_headers = 0;
@@ -88,29 +118,29 @@ int check_archive(int tar_fd) {
  */
 int exists(int tar_fd, char *path) {
 
-    //off_t lseek_size = lseek(tar_fd, 0, SEEK_END); // Size of entire archive
-    //int nb_tot_blocks = lseek_size / 512;
+    long to_go_cumulate = 0;
 
-    long to_go_cumulate = 0; // The position in the file !
+    while(true) {
 
-    tar_header_t * data = malloc(sizeof(tar_header_t));
-    if(data == NULL) return -1;
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
 
 
-    while(lseek(tar_fd, to_go_cumulate, SEEK_SET) != 1) {
-
-        ssize_t reading = read(tar_fd, data, sizeof(tar_header_t));
-        if(reading < sizeof(tar_header_t)) break;
+        if(strcmp(data->name, path) == 0) return 1;
 
         long to_go = ((TAR_INT(data->size) / 512) * 512);
         if(to_go % 512 > 0){
             to_go += 512;
         }
 
-        if(strcmp(data->name, path) == 0) return 1;
-
         to_go_cumulate += to_go;
-
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
     }
     return 0;
 }
@@ -126,30 +156,9 @@ int exists(int tar_fd, char *path) {
  */
 int is_dir(int tar_fd, char *path) {
 
-    //off_t lseek_size = lseek(tar_fd, 0, SEEK_END); // Size of entire archive
-    //int nb_tot_blocks = lseek_size / 512;
-
-    long to_go_cumulate = 0; // The position in the file !
-
-    tar_header_t * data = malloc(sizeof(tar_header_t));
-    if(data == NULL) return -1;
+        //if(strcmp(data->name, path) == 0 && data->typeflag == DIRTYPE) return 1;
 
 
-    while(lseek(tar_fd, to_go_cumulate, SEEK_SET) != 1) {
-
-        ssize_t reading = read(tar_fd, data, sizeof(tar_header_t));
-        if(reading < sizeof(tar_header_t)) break;
-
-        long to_go = ((TAR_INT(data->size) / 512) * 512);
-        if(to_go % 512 > 0){
-            to_go += 512;
-        }
-
-        if(strcmp(data->name, path) == 0 && data->typeflag == DIRTYPE) return 1;
-
-        to_go_cumulate += to_go;
-
-    }
     return 0;
 }
 
@@ -164,30 +173,9 @@ int is_dir(int tar_fd, char *path) {
  */
 int is_file(int tar_fd, char *path) {
 
-    //off_t lseek_size = lseek(tar_fd, 0, SEEK_END); // Size of entire archive
-    //int nb_tot_blocks = lseek_size / 512;
 
-    long to_go_cumulate = 0; // The position in the file !
+        //if(strcmp(data->name, path) == 0 && data->typeflag == REGTYPE) return 1;
 
-    tar_header_t * data = malloc(sizeof(tar_header_t));
-    if(data == NULL) return -1;
-
-
-    while(lseek(tar_fd, to_go_cumulate, SEEK_SET) != 1) {
-
-        ssize_t reading = read(tar_fd, data, sizeof(tar_header_t));
-        if(reading < sizeof(tar_header_t)) break;
-
-        long to_go = ((TAR_INT(data->size) / 512) * 512);
-        if(to_go % 512 > 0){
-            to_go += 512;
-        }
-
-        if(strcmp(data->name, path) == 0 && data->typeflag == REGTYPE) return 1;
-
-        to_go_cumulate += to_go;
-
-    }
     return 0;
 }
 

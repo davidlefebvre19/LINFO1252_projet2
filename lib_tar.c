@@ -10,6 +10,28 @@
  * A function which returns true if we are at the end of the tar archive and false otherwise
  */
 
+
+bool first_empty_block(int tar_fd){
+
+    off_t to_go = lseek(tar_fd, 0, SEEK_CUR);
+
+    char the_block[block_size];
+
+    ssize_t reading = read(tar_fd, the_block, block_size);
+    if(reading < 0) return false;
+
+    for (int i = 0; i < block_size; ++i) {
+        if(the_block[i] != 0){
+            lseek(tar_fd, to_go, SEEK_SET);
+            return false;
+        }
+    }
+
+    lseek(tar_fd, to_go, SEEK_SET);
+    return true;
+
+}
+
 bool is_it_the_end(int tar_fd){
 
     off_t to_go = lseek(tar_fd, 0, SEEK_CUR);
@@ -52,10 +74,23 @@ bool is_it_the_end(int tar_fd){
 int check_archive(int tar_fd) {
 
     int nb_of_headers = 0;
-
     long to_go_cumulate = 0;
 
+    bool first_block_empty = false;
+    //bool begining = true;
+
+
     while(true) {
+
+        if(first_empty_block(tar_fd)){
+            if(first_block_empty == true){
+                break;
+            } else {
+                first_block_empty = true;
+                to_go_cumulate += 512;
+                continue;
+            }
+        }
 
         tar_header_t * data = malloc(sizeof(tar_header_t));
         if(data == NULL) return 0;
@@ -65,7 +100,9 @@ int check_archive(int tar_fd) {
             return 0;
         }
 
-        if(strcmp(data->magic, "ustar") != 0) return -1;
+        nb_of_headers++;
+
+        if(strncmp(data->magic, TMAGIC, TMAGLEN-1) != 0) return -1;
         if(strncmp(data->version, TVERSION, TVERSLEN-1) != 0) return -2;
 
         long int chksum = TAR_INT(data->chksum);
@@ -81,18 +118,29 @@ int check_archive(int tar_fd) {
 
         if(chksum != tot) return -3;
 
+        //if(begining){
+        //    begining = false;
+        //    lseek(tar_fd, 512, SEEK_SET);
+        //    if(is_it_the_end(tar_fd))return 1;
+        //}
+
         long to_go = ((TAR_INT(data->size) / 512) * 512);
         if(to_go % 512 > 0){
             to_go += 512;
         }
 
         to_go_cumulate += to_go;
+
         lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-        if(is_it_the_end(tar_fd) == true) break;
-        nb_of_headers++;
+
+        free(data);
+
+        if(is_it_the_end(tar_fd) == true){
+            break;
+        }
+
     }
     return nb_of_headers;
-
 }
 
 
@@ -130,7 +178,8 @@ int exists(int tar_fd, char *path) {
 
         to_go_cumulate += to_go;
         lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-        if(is_it_the_end(tar_fd) == true) break;
+        free(data);
+        if(is_it_the_end(tar_fd)) break;
     }
     return 0;
 }
@@ -270,7 +319,77 @@ int is_symlink(int tar_fd, char *path) {
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     long to_go_cumulate = 0;
+    int nb_of_not_dir = 0;
+    int nb_headers =0;
+    while(true) {
 
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(!is_dir(tar_fd, path)){
+            nb_of_not_dir++;
+        }
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+        nb_headers++;
+    }
+    if(nb_headers == nb_of_not_dir){
+        return 0;
+    } else {
+        return 1;
+    }
+
+    /*
+    while(true) {
+
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return 0;
+
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return 0;
+        }
+
+        if(data->typeflag == SYMTYPE){
+
+            long to_go = ((TAR_INT(data->size) / 512) * 512);
+            if(to_go % 512 > 0){
+                to_go += 512;
+            }
+
+            to_go_cumulate += to_go;
+            lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+            continue;
+        }
+
+        if(strncmp(data->name, path, strlen(path)) == 0){
+            strncpy(entries[*no_entries], data->name, strlen(data->name));
+            (*no_entries)++;
+        }
+
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if(to_go % 512 > 0){
+            to_go += 512;
+        }
+
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+        if(is_it_the_end(tar_fd) == true) break;
+    }
+     */
+/*
     while(true) {
 
         tar_header_t * data = malloc(sizeof(tar_header_t));
@@ -282,31 +401,23 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
         }
 
         if(data->typeflag == SYMTYPE) {
-            char link[101];
-            memcpy(link, data->linkname, 100);
-            link[100] = '\0';
-
-            lseek(tar_fd, 0, SEEK_SET);
+            if(strcmp(data->linkname, path) != 0){
+                lseek(tar_fd, 0, SEEK_SET);
+                return list(tar_fd, data->linkname, entries, no_entries);
+            }
         }
 
-        char var_name[101];
-        memcpy(var_name, data->name, 100);
-        var_name[100] = '\0';
 
         long to_go = ((TAR_INT(data->size) / 512) * 512);
         if(to_go % 512 > 0){
             to_go += 512;
         }
 
-        if(strncmp(var_name, path, strlen(path)) == 0){
-            entries[*no_entries] = strdup(var_name);
-            (*no_entries)++;
-        }
-
         to_go_cumulate += to_go;
         lseek(tar_fd, to_go_cumulate, SEEK_CUR);
         if(is_it_the_end(tar_fd) == true) break;
     }
+*/
 
     return 0;
 }

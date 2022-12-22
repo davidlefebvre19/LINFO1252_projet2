@@ -318,75 +318,147 @@ int is_symlink(int tar_fd, char *path) {
  * @return zero if no directory at the given path exists in the archive,
  *         any other value otherwise.
  */
-int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
-    long to_go_cumulate = 0;
-    size_t num_entries = 0;
+/*
+int isInSubDir(char *path,int dir){
+    int len = strlen(path)-dir;
+    for(int i = 0;i<len;i++){
+        if(path[i]=='/') return 1;
+    }
+    return 0;
+}
+//dir1/test
+//dir1/
+int isInPath(char *buffdotname,char *t,int dir){
 
-    while(true) {
+    char *path = buffdotname;
+    char *target = t;
+    while(*path=='.' || *path=='/') path++;
 
-        tar_header_t * data = malloc(sizeof(tar_header_t));
-        if(data == NULL) return 0;
-
-        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
-            printf("an error occurred while reading");
-            return 0;
-        }
-
-        if (is_dir(tar_fd, path)) return 1;
-
-        if (strncmp(data->name, path, strlen(path)) == 0) {
-            if (data->typeflag == DIRTYPE || data->typeflag == REGTYPE || data->typeflag == AREGTYPE) {
-                if (num_entries < *no_entries) {
-                    strcpy(entries[num_entries], data->name);
-                    num_entries++;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        long to_go = ((TAR_INT(data->size) / 512) * 512);
-        if(to_go % 512 > 0){
-            to_go += 512;
-        }
-
-        to_go_cumulate += to_go;
-        lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-        //free(data);
-        if(is_it_the_end(tar_fd) == true) break;
+    // on enleve le / au debut du
+    while(*target=='/' || *target=='.') target++;
+    while(*target == *path && *target != '\0' && *path != '\0' ){
+        target++;
+        path++;
     }
 
-    *no_entries = num_entries;
-    return num_entries > 0;
+    // on est au point ou a enleve toute la partie commun des 2 chemins
+    if(strlen(target)>0) return -1; // cause: pas le meme path
+    while(*path=='/') path++; // si ca arrive, j enleve un / en debut du string
+    if(strlen(path)==0) return -1; //cause ceci est le meme nom que la cible
+    if(isInSubDir(path,dir)==1) return -1;//cause : est dans un sous dossier
+    return 1;
+}
+*/
 
+int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
+
+    long to_go_cumulate = 0;
+    int entries_cumulator = 0;
+
+    while (1) {
+
+        tar_header_t * data = malloc(sizeof (tar_header_t));
+        if (data == NULL) return
+
+    }
 
     /*
-    while(true) {
-
-        tar_header_t * data = malloc(sizeof(tar_header_t));
-        if(data == NULL) return 0;
-
-        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
-            printf("an error occurred while reading");
+    int header_size = sizeof(tar_header_t);
+    tar_header_t buff;
+    ssize_t  r;
+    int listed = 0;
+    //printf("et c est reaprti %s \n",path);
+    while(1){
+        r=read(tar_fd,&buff,header_size);
+        if(r==-1){
+            printf("Une erreur est survenue \n");
             return 0;
         }
-
-        if(data->typeflag == SYMTYPE){
-
-            long to_go = ((TAR_INT(data->size) / 512) * 512);
-            if(to_go % 512 > 0){
-                to_go += 512;
+        if (*(uint8_t *) &buff == 0) break;
+        //printf("%s \n",buff.linkname);
+        // printf("- %c \n",buff.typeflag);
+        if(buff.typeflag==SYMTYPE){
+            if(strcmp(buff.linkname,path) != 0) {//j ai imbrique le if poru les perfs
+                lseek(tar_fd, 0, SEEK_SET);
+                return list(tar_fd, buff.linkname, entries, no_entries);
             }
-
-            to_go_cumulate += to_go;
-            lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-            continue;
+        }
+        if(isInPath(buff.name,path,(buff.typeflag==DIRTYPE))==1){
+            if(listed>=*no_entries){
+                printf("on ne peut pas ajouter car on a trop de fichier pour la taille du tableua \n");
+            }else{
+                strcpy(entries[listed],buff.name);
+            }
+            listed ++;
         }
 
-        if(strncmp(data->name, path, strlen(path)) == 0){
-            strncpy(entries[*no_entries], data->name, strlen(data->name));
-            (*no_entries)++;
+        long int jump = (long int) (TAR_INT(buff.size)/512.0 + ((TAR_INT(buff.size)%512) != 0))*512;
+
+        lseek(tar_fd,jump,SEEK_CUR);
+    }
+    *no_entries = (size_t) listed;
+    if(listed>0){
+        return 0;
+    }else{
+        return 1;
+    }
+
+
+
+long to_go_cumulate = 0;
+size_t num_entries = 0;
+
+while(true) {
+
+    tar_header_t * data = malloc(sizeof(tar_header_t));
+    if(data == NULL) return 0;
+
+    if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+        printf("an error occurred while reading");
+        return 0;
+    }
+
+    if (is_dir(tar_fd, path)) return 1;
+
+    if (strncmp(data->name, path, strlen(path)) == 0) {
+        if (data->typeflag == DIRTYPE || data->typeflag == REGTYPE || data->typeflag == AREGTYPE) {
+            if (num_entries < *no_entries) {
+                strcpy(entries[num_entries], data->name);
+                num_entries++;
+            } else {
+                break;
+            }
         }
+    }
+
+    long to_go = ((TAR_INT(data->size) / 512) * 512);
+    if(to_go % 512 > 0){
+        to_go += 512;
+    }
+
+    to_go_cumulate += to_go;
+    lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+    //free(data);
+    if(is_it_the_end(tar_fd) == true) break;
+}
+
+*no_entries = num_entries;
+return num_entries > 0;
+
+     return 0;
+
+
+while(true) {
+
+    tar_header_t * data = malloc(sizeof(tar_header_t));
+    if(data == NULL) return 0;
+
+    if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+        printf("an error occurred while reading");
+        return 0;
+    }
+
+    if(data->typeflag == SYMTYPE){
 
         long to_go = ((TAR_INT(data->size) / 512) * 512);
         if(to_go % 512 > 0){
@@ -395,9 +467,24 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
 
         to_go_cumulate += to_go;
         lseek(tar_fd, to_go_cumulate, SEEK_CUR);
-        if(is_it_the_end(tar_fd) == true) break;
+        continue;
     }
-     */
+
+    if(strncmp(data->name, path, strlen(path)) == 0){
+        strncpy(entries[*no_entries], data->name, strlen(data->name));
+        (*no_entries)++;
+    }
+
+    long to_go = ((TAR_INT(data->size) / 512) * 512);
+    if(to_go % 512 > 0){
+        to_go += 512;
+    }
+
+    to_go_cumulate += to_go;
+    lseek(tar_fd, to_go_cumulate, SEEK_CUR);
+    if(is_it_the_end(tar_fd) == true) break;
+}
+ */
 /*
     while(true) {
 
@@ -428,7 +515,7 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     }
 */
 
-    return 0;
+
 }
 
 /**

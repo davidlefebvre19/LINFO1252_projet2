@@ -318,14 +318,15 @@ int is_symlink(int tar_fd, char *path) {
  * @return zero if no directory at the given path exists in the archive,
  *         any other value otherwise.
  */
-/*
-int isInSubDir(char *path,int dir){
-    int len = strlen(path)-dir;
-    for(int i = 0;i<len;i++){
-        if(path[i]=='/') return 1;
+int is_a_subdir(char *path,int dir){
+    int found = 0;
+    int len = strlen(path);
+    for(int i=0;i<len-dir;i++){
+        if(path[i]=='/') found = 1;
     }
-    return 0;
+    return (found);
 }
+/*
 //dir1/test
 //dir1/
 int isInPath(char *buffdotname,char *t,int dir){
@@ -350,19 +351,73 @@ int isInPath(char *buffdotname,char *t,int dir){
 }
 */
 
+
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
 
+    // Used to set offset
     long to_go_cumulate = 0;
+    // used to set the in-out arg and compute the nb of directories
     int entries_cumulator = 0;
+    int no_directories = 0;
 
+    // Loop until EOF
     while (1) {
+        tar_header_t * data = malloc(sizeof(tar_header_t));
+        if(data == NULL) return -1;
 
-        tar_header_t * data = malloc(sizeof (tar_header_t));
-        if (data == NULL) return
+        if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+            printf("an error occurred while reading");
+            return -1;
+        }
 
+        // check EOF
+        if (is_it_the_end(tar_fd)) break;
+        if (*(uint8_t *) data == 0) break;
+
+        // here for debugging purpose
+        printf("linkname : %s \n", data->linkname);
+        printf("type : %c \n", data->typeflag);
+
+        // check if current file has symlink
+        if (data->typeflag == SYMTYPE) {
+            lseek(tar_fd, 0, SEEK_SET);
+            return list(tar_fd, data->linkname, entries, no_entries); // Update entries and no_entries on the path pointed by the linkname
+        }
+
+        // Check if the current entry is a dir, update no_directories if so
+        // Also, update entries array and no_entries variable IF enough space is available in entries array
+        int dir =0;
+        if (data->typeflag == DIRTYPE) {
+            no_directories++;
+            dir =1;
+        }
+
+        // If current entry is in a listed directory, skip it (this function does not recurse in folders
+        if (!(is_a_subdir(data->name, dir))) {
+            strcpy(entries[entries_cumulator], data->name);
+            printf("filename %s\n", data->name);
+            entries_cumulator++;
+        }
+
+        // Compute nb of bytes until next header or end of file
+        long to_go = ((TAR_INT(data->size) / 512) * 512);
+        if ((TAR_INT(data->size)%512) != 0) {
+            to_go+=512;
+        }
+
+        // Add jump size to to_go_cumulate and move file offset
+        to_go_cumulate += to_go;
+        lseek(tar_fd, to_go, SEEK_CUR);
+        free(data);
     }
 
+    // We set no_entries to the number of entries listed
+    * no_entries = (size_t) entries_cumulator;
+    if (no_directories > 0) return 1;
+    return 0;
     /*
+
+
     int header_size = sizeof(tar_header_t);
     tar_header_t buff;
     ssize_t  r;
@@ -404,7 +459,7 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     }
 
 
-
+/*
 long to_go_cumulate = 0;
 size_t num_entries = 0;
 

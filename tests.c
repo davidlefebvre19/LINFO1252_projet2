@@ -38,18 +38,23 @@ int main(int argc, char **argv) {
         perror("open(tar_file)");
         return -1;
     }
-    char **entries;
     int num_entries = 5;
     size_t no_entries;
     int a = 5;
     no_entries = (size_t) a;
     size_t *no_entriesptr = &no_entries;
-    entries = malloc(num_entries * sizeof(char*));
-    for (int i = 0; i < num_entries; i++) {
-        entries[i] = malloc(ENTRY_PATH_LEN * sizeof(char));
+
+    char * arr[5];
+    for (int i = 0; i < 5; ++i) {
+        arr[i] = malloc(sizeof (char ) * 256);
     }
-    int ret = list(fd, "./", entries, no_entriesptr);
-    printf("check_archive returned %d\n", ret);
-    free(no_entriesptr);
+    char ** arrptr = (char **) &arr;
+    int ret = list(fd, "./", (char **) arrptr, no_entriesptr);
+    printf("list returned %d, the in-out argmt val is : %zu\n", ret, *no_entriesptr);
+
+    for (int i = 0; i < 5; ++i) {
+        printf("entries : %s\n", arrptr[i]);
+    }
+
     return 0;
 }

@@ -2,9 +2,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-//#include "lib_tar.c"
+#include "lib_tar.c"
 #include "stddef.h"
-#include "lib_tar.h"
+//#include "lib_tar.h"
 
 #define ENTRY_PATH_LEN 256
 
@@ -38,23 +38,29 @@ int main(int argc, char **argv) {
         perror("open(tar_file)");
         return -1;
     }
+
+
+    //int ret0 = check_archive(fd);
+    // printf("check archive val : %d", ret0);
+
     //int num_entries = 5;
     size_t no_entries;
-    int a = 5;
+    int a = 8;
     no_entries = (size_t) a;
     size_t *no_entriesptr = &no_entries;
 
-    char * arr[5];
-    for (int i = 0; i < 5; ++i) {
-        arr[i] = malloc(sizeof (char ) * 256);
+    size_t st=8;
+    char **array = malloc(sizeof(char *)*st);
+    for(int i=0;i<st;i++){
+        array[i] = (char *)calloc(20,sizeof(char *));
     }
-    char ** arrptr = (char **) &arr;
-    int ret = list(fd, "/", (char **) arrptr, no_entriesptr);
+    int ret = list(fd, ".", (char **) array, no_entriesptr);
     printf("list returned %d, the in-out argmt val is : %zu\n", ret, *no_entriesptr);
 
     for (int i = 0; i < 5; ++i) {
-        printf("entries : %s\n", arrptr[i]);
+        printf("entries : %s\n", array[i]);
     }
-
-    return 0;
+    char *s = malloc(sizeof (char )*6);
+    strcpy(s, "kurwa\0");
+    return EXIT_SUCCESS;
 }

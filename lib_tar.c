@@ -296,6 +296,31 @@ int is_symlink(int tar_fd, char *path) {
 }
 
 
+/** ADDED BY STUDENT
+ * Check if the file or folder in the given path is in a subdirectory
+ *
+ * Example:
+ *  dir/          is_a_subdir("dir/d", 0) will return 1, is_a_subdir("a", 0) will return 0
+ *   ├── a        is_a_subdir("c/", 1) will return 0
+ *   ├── b
+ *   ├── c/
+ *   │   └── d
+ *   └── e/
+ *
+ * @param path A path to an entry in the archive. If the entry is a symlink, it must be resolved to its linked-to entry.
+ * @param dir A value equal to 1 if the path given points to a directory
+ *
+ * @return zero if file/directory is inside a directory, 1 otherwise
+ */
+int is_a_subdir(char *path,int dir){
+    int found = 0;
+    int len = strlen(path);
+    for(int i=0;i<len-dir;i++){
+        if(path[i]=='/') found = 1;
+    }
+    return (found);
+}
+
 /**
  * Lists the entries at a given path in the archive.
  * list() does not recurse into the directories listed at the given path.
@@ -318,13 +343,33 @@ int is_symlink(int tar_fd, char *path) {
  * @return zero if no directory at the given path exists in the archive,
  *         any other value otherwise.
  */
-int is_a_subdir(char *path,int dir){
-    int found = 0;
-    int len = strlen(path);
-    for(int i=0;i<len-dir;i++){
-        if(path[i]=='/') found = 1;
+
+int check_symlink_content(int tar_fd, long offset, int * dirptr, char * filename) {
+    tar_header_t * data = malloc(sizeof(tar_header_t));
+    if(data == NULL) return -1;
+
+    lseek(tar_fd, offset, SEEK_SET);
+    if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
+        printf("an error occurred while reading");
+        return -1;
     }
-    return (found);
+
+    char * path = data->linkname;
+    // first remove "." and "/"
+    if (path[strlen(path)-1] == '/') *dirptr=1;
+    int slashcnt = 0;
+    for (int i = 0; i < strlen(path)-1-(*dirptr); ++i) {
+        if (path[i] == '/') slashcnt++;
+    }
+    while (slashcnt != 0) {
+        char curr = *path;
+        if (curr == '/'){
+            slashcnt-=1;
+        }
+        path++;
+    }
+    strcpy(filename, path);
+    return 1;
 }
 
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
@@ -341,7 +386,7 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
         if(data == NULL) return -1;
 
         if(read(tar_fd, data, sizeof(tar_header_t)) == -1){
-            printf("an error occurred while reading");
+            //printf("an error occurred while reading");
             return -1;
         }
 
@@ -350,29 +395,40 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
         if (*(uint8_t *) data == 0) break;
 
         // here for debugging purpose
-        printf("linkname : %s \n", data->linkname);
-        printf("type : %c \n", data->typeflag);
+        //printf("linkname : %s \n", data->linkname);
+        //printf("type : %c \n", data->typeflag);
 
         // check if current file has symlink
         if (data->typeflag == SYMTYPE) {
-            lseek(tar_fd, 0, SEEK_SET);
-            return list(tar_fd, data->linkname, entries, no_entries); // Update entries and no_entries on the path pointed by the linkname
-        }
-
-        // Check if the current entry is a dir, update no_directories if so
-        // Also, update entries array and no_entries variable IF enough space is available in entries array
-        int dir =0;
-        if (data->typeflag == DIRTYPE) {
-            no_directories++;
-            dir =1;
-        }
-
-        // If current entry is in a listed directory, skip it (this function does not recurse in folders
-        if (!(is_a_subdir(data->name, dir))) {
-            strcpy(entries[entries_cumulator], data->name);
-            printf("filename %s\n", data->name);
+            int dir = 0;
+            int * dirptr = & dir;
+            // 6 cases for filename : 1. "../file(/)", "file(/)", "directory/file(/)",  (/) have been added because the filename can eventually be a directory
+            // This pointer will also be used to store the filename/directory name on the entry list
+            char * filename = data->linkname;
+            check_symlink_content(tar_fd, to_go_cumulate, dirptr, filename);
+            if (dir) {
+                no_directories++;
+            }
+            strcpy(entries[entries_cumulator], filename);
             entries_cumulator++;
+        } else {
+            // Check if the current entry is a dir, update no_directories if so
+            // Also, update entries array and no_entries variable IF enough space is available in entries array
+            int dir =0;
+            if (data->typeflag == DIRTYPE) {
+                no_directories++;
+                dir =1;
+            }
+
+            // If current entry is in a listed directory, skip it (this function does not recurse in folders
+            if (!(is_a_subdir(data->name, dir))) {
+                char * filename = data->name;
+                strcpy(entries[entries_cumulator], filename);
+                printf("filename %s\n", data->name);
+                entries_cumulator++;
+            }
         }
+
 
         // Compute nb of bytes until next header or end of file
         long to_go = ((TAR_INT(data->size) / 512) * 512);
@@ -388,8 +444,8 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
 
     // We set no_entries to the number of entries listed
     * no_entries = (size_t) entries_cumulator;
-    if (no_directories > 0) return 1;
-    return 0;
+    if (no_entries > 0) return 0;
+    return 1;
 }
 
 /**

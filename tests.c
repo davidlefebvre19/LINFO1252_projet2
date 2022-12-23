@@ -2,9 +2,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "lib_tar.c"
+//#include "lib_tar.c"
 #include "stddef.h"
-//#include "lib_tar.h"
+#include "lib_tar.h"
 
 #define ENTRY_PATH_LEN 256
 
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
         perror("open(tar_file)");
         return -1;
     }
-    int num_entries = 5;
+    //int num_entries = 5;
     size_t no_entries;
     int a = 5;
     no_entries = (size_t) a;
@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
         arr[i] = malloc(sizeof (char ) * 256);
     }
     char ** arrptr = (char **) &arr;
-    int ret = list(fd, "./", (char **) arrptr, no_entriesptr);
+    int ret = list(fd, "/", (char **) arrptr, no_entriesptr);
     printf("list returned %d, the in-out argmt val is : %zu\n", ret, *no_entriesptr);
 
     for (int i = 0; i < 5; ++i) {
